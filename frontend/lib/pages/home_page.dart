@@ -17,7 +17,6 @@ class _HomePageState extends State<HomePage> {
       setState(() { message = value; });
     });
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
