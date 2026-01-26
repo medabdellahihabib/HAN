@@ -1,6 +1,6 @@
 class AppConstants {
   // URL de votre backend Django
-  static const String baseUrl = 'http://127.0.0.1:8000/api';
+  static const String baseUrl = 'http://127.0.0.1:9000/api';
   
   // Endpoints
   static const String registerEndpoint = '/register/';
