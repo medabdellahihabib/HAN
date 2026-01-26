@@ -1,185 +1,145 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.models import User
-from django.core.exceptions import ValidationError
+from .models import CustomUser, HennaType, Order
+from .serializers import (
+    RegisterSerializer, UserSerializer,
+    HennaTypeSerializer, OrderSerializer, CreateOrderSerializer
+)
 
 # ----------------------------
-# API simple de test
+# Configuration des messages selon la langue
+# ----------------------------
+MESSAGES = {
+    'ar': {
+        'register_success': 'تم إنشاء الحساب بنجاح',
+        'login_success': 'تم تسجيل الدخول بنجاح',
+        'logout_success': 'تم تسجيل الخروج بنجاح',
+        'order_success': 'شكرا على الثقة و سنتواصل معكم قريبا',
+        'profile_updated': 'تم تحديث الملف الشخصي بنجاح',
+        'password_changed': 'تم تغيير كلمة المرور بنجاح',
+        'invalid_credentials': 'اسم المستخدم أو كلمة المرور غير صحيحة',
+        'missing_fields': 'يرجى ملء جميع الحقول المطلوبة',
+    },
+    'fr': {
+        'register_success': 'Compte créé avec succès',
+        'login_success': 'Connexion réussie',
+        'logout_success': 'Déconnexion réussie',
+        'order_success': 'Merci pour votre confiance, nous vous contactons bientôt',
+        'profile_updated': 'Profil mis à jour avec succès',
+        'password_changed': 'Mot de passe changé avec succès',
+        'invalid_credentials': 'Nom d\'utilisateur ou mot de passe incorrect',
+        'missing_fields': 'Veuillez remplir tous les champs requis',
+    }
+}
+
+def get_message(lang, key):
+    """Récupère le message selon la langue"""
+    return MESSAGES.get(lang, MESSAGES['ar']).get(key)
+
+
+# ----------------------------
+# API Test
 # ----------------------------
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def hello_api(request):
     return Response({
-        "message": "Hello from Django backend 🚀"
+        "message": "مرحبا بك في تطبيق الحناء 🎨",
+        "message_fr": "Bienvenue dans l'application Henné 🎨"
     })
 
+
 # ----------------------------
-# API Register (Création de compte)
+# API Inscription (Register)
 # ----------------------------
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_api(request):
-    username = request.data.get('username')
-    password = request.data.get('password')
-    email = request.data.get('email', '')  # Optionnel
-    first_name = request.data.get('first_name', '')  # Optionnel
-    last_name = request.data.get('last_name', '')  # Optionnel
-
-    # Validation des données
-    if not username or not password:
-        return Response(
-            {"error": "Le nom d'utilisateur et le mot de passe sont requis"}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # Vérifier si l'utilisateur existe déjà
-    if User.objects.filter(username=username).exists():
-        return Response(
-            {"error": "Ce nom d'utilisateur est déjà pris"}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # Vérifier l'email si fourni
-    if email and User.objects.filter(email=email).exists():
-        return Response(
-            {"error": "Cet email est déjà utilisé"}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    try:
-        # Créer l'utilisateur
-        user = User.objects.create_user(
-            username=username,
-            password=password,
-            email=email if email else '',
-            first_name=first_name,
-            last_name=last_name
-        )
-        
-        # Connecter automatiquement l'utilisateur après inscription
+    serializer = RegisterSerializer(data=request.data)
+    
+    if serializer.is_valid():
+        user = serializer.save()
         login(request, user)
         
-        return Response({
-            "message": "Compte créé avec succès",
-            "username": user.username,
-            "email": user.email,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "date_joined": user.date_joined
-        }, status=status.HTTP_201_CREATED)
+        lang = user.language_preference
         
-    except ValidationError as e:
-        return Response(
-            {"error": str(e)}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    except Exception as e:
-        return Response(
-            {"error": "Une erreur est survenue lors de la création du compte"}, 
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        return Response({
+            "message": get_message(lang, 'register_success'),
+            "user": UserSerializer(user).data
+        }, status=status.HTTP_201_CREATED)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 # ----------------------------
-# API Login
+# API Connexion (Login)
 # ----------------------------
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login_api(request):
     username = request.data.get('username')
     password = request.data.get('password')
-
+    
     if not username or not password:
         return Response(
-            {"error": "Le nom d'utilisateur et le mot de passe sont requis"}, 
+            {"error": "يرجى إدخال اسم المستخدم وكلمة المرور"},
             status=status.HTTP_400_BAD_REQUEST
         )
-
+    
     user = authenticate(request, username=username, password=password)
-
+    
     if user is not None:
         login(request, user)
+        lang = user.language_preference
+        
         return Response({
-            "message": "Login successful",
-            "username": user.username,
-            "email": user.email,
-            "first_name": user.first_name,
-            "last_name": user.last_name
+            "message": get_message(lang, 'login_success'),
+            "user": UserSerializer(user).data
         })
-    else:
-        return Response(
-            {"error": "Identifiant ou mot de passe incorrect"}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    
+    return Response(
+        {"error": "اسم المستخدم أو كلمة المرور غير صحيحة"},
+        status=status.HTTP_400_BAD_REQUEST
+    )
+
 
 # ----------------------------
-# API Logout
+# API Déconnexion (Logout)
 # ----------------------------
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_api(request):
+    lang = request.user.language_preference
     logout(request)
-    return Response({"message": "Logout successful"})
+    return Response({"message": get_message(lang, 'logout_success')})
+
 
 # ----------------------------
 # API Profil utilisateur
 # ----------------------------
-@api_view(['GET'])
+@api_view(['GET', 'PUT'])
 @permission_classes([IsAuthenticated])
 def profile_api(request):
     user = request.user
-    return Response({
-        "username": user.username,
-        "email": user.email,
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "date_joined": user.date_joined,
-        "last_login": user.last_login
-    })
+    
+    if request.method == 'GET':
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            lang = user.language_preference
+            return Response({
+                "message": get_message(lang, 'profile_updated'),
+                "user": serializer.data
+            })
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-# ----------------------------
-# API Mise à jour du profil
-# ----------------------------
-@api_view(['PUT'])
-@permission_classes([IsAuthenticated])
-def update_profile_api(request):
-    user = request.user
-    
-    email = request.data.get('email')
-    first_name = request.data.get('first_name')
-    last_name = request.data.get('last_name')
-    
-    if email:
-        # Vérifier si l'email n'est pas déjà utilisé par un autre utilisateur
-        if User.objects.filter(email=email).exclude(id=user.id).exists():
-            return Response(
-                {"error": "Cet email est déjà utilisé par un autre compte"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        user.email = email
-    
-    if first_name is not None:
-        user.first_name = first_name
-    
-    if last_name is not None:
-        user.last_name = last_name
-    
-    try:
-        user.save()
-        return Response({
-            "message": "Profil mis à jour avec succès",
-            "username": user.username,
-            "email": user.email,
-            "first_name": user.first_name,
-            "last_name": user.last_name
-        })
-    except Exception as e:
-        return Response(
-            {"error": "Erreur lors de la mise à jour du profil"}, 
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
 
 # ----------------------------
 # API Changer le mot de passe
@@ -188,41 +148,200 @@ def update_profile_api(request):
 @permission_classes([IsAuthenticated])
 def change_password_api(request):
     user = request.user
-    
     old_password = request.data.get('old_password')
     new_password = request.data.get('new_password')
     
     if not old_password or not new_password:
         return Response(
-            {"error": "L'ancien et le nouveau mot de passe sont requis"}, 
+            {"error": "يرجى إدخال كلمة المرور القديمة والجديدة"},
             status=status.HTTP_400_BAD_REQUEST
         )
     
-    # Vérifier l'ancien mot de passe
     if not user.check_password(old_password):
         return Response(
-            {"error": "L'ancien mot de passe est incorrect"}, 
+            {"error": "كلمة المرور القديمة غير صحيحة"},
             status=status.HTTP_400_BAD_REQUEST
         )
     
-    try:
-        user.set_password(new_password)
-        user.save()
-        
-        # Reconnecter l'utilisateur avec le nouveau mot de passe
-        login(request, user)
-        
-        return Response({"message": "Mot de passe changé avec succès"})
-    except Exception as e:
-        return Response(
-            {"error": "Erreur lors du changement de mot de passe"}, 
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+    user.set_password(new_password)
+    user.save()
+    login(request, user)
+    
+    lang = user.language_preference
+    return Response({"message": get_message(lang, 'password_changed')})
+
 
 # ----------------------------
-# Exemple API protégée (home)
+# API Changer la langue
 # ----------------------------
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_language_api(request):
+    user = request.user
+    language = request.data.get('language')
+    
+    if language not in ['ar', 'fr']:
+        return Response(
+            {"error": "اللغة غير صالحة / Langue invalide"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    user.language_preference = language
+    user.save()
+    
+    return Response({
+        "message": "تم تغيير اللغة بنجاح" if language == 'ar' else "Langue changée avec succès",
+        "language": language
+    })
+
+
+# ========================================
+# APIs pour les types de henné
+# ========================================
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def home_api(request):
-    return Response({"message": f"Bienvenue {request.user.username} sur Flutter backend"})
+def henna_types_list_api(request):
+    """Liste tous les types de henné disponibles"""
+    henna_types = HennaType.objects.filter(is_available=True)
+    serializer = HennaTypeSerializer(
+        henna_types,
+        many=True,
+        context={'request': request}
+    )
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def henna_type_detail_api(request, pk):
+    """Détails d'un type de henné"""
+    try:
+        henna_type = HennaType.objects.get(pk=pk, is_available=True)
+        serializer = HennaTypeSerializer(henna_type, context={'request': request})
+        return Response(serializer.data)
+    except HennaType.DoesNotExist:
+        return Response(
+            {"error": "نوع الحناء غير موجود"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+
+# ========================================
+# APIs pour les commandes
+# ========================================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_order_api(request):
+    """Créer une nouvelle commande - طلب حناء"""
+    serializer = CreateOrderSerializer(
+        data=request.data,
+        context={'request': request}
+    )
+    
+    if serializer.is_valid():
+        order = serializer.save()
+        lang = request.user.language_preference
+        
+        return Response({
+            "message": get_message(lang, 'order_success'),
+            "order": OrderSerializer(order).data
+        }, status=status.HTTP_201_CREATED)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_orders_api(request):
+    """Liste des commandes de l'utilisateur connecté"""
+    orders = Order.objects.filter(client=request.user)
+    serializer = OrderSerializer(orders, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def order_detail_api(request, pk):
+    """Détails d'une commande"""
+    try:
+        order = Order.objects.get(pk=pk, client=request.user)
+        serializer = OrderSerializer(order)
+        return Response(serializer.data)
+    except Order.DoesNotExist:
+        return Response(
+            {"error": "الطلب غير موجود"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+
+# ========================================
+# APIs ADMIN - Dashboard
+# ========================================
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def admin_dashboard_api(request):
+    """Dashboard admin - statistiques générales"""
+    total_orders = Order.objects.count()
+    pending_orders = Order.objects.filter(status='pending').count()
+    completed_orders = Order.objects.filter(status='completed').count()
+    total_clients = CustomUser.objects.filter(is_staff=False).count()
+    
+    return Response({
+        "total_orders": total_orders,
+        "pending_orders": pending_orders,
+        "completed_orders": completed_orders,
+        "total_clients": total_clients
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def admin_orders_list_api(request):
+    """Liste de toutes les commandes pour l'admin"""
+    status_filter = request.GET.get('status')
+    
+    orders = Order.objects.all()
+    if status_filter:
+        orders = orders.filter(status=status_filter)
+    
+    serializer = OrderSerializer(orders, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAdminUser])
+def admin_order_detail_api(request, pk):
+    """Détails et modification d'une commande par l'admin"""
+    try:
+        order = Order.objects.get(pk=pk)
+    except Order.DoesNotExist:
+        return Response(
+            {"error": "الطلب غير موجود"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    if request.method == 'GET':
+        serializer = OrderSerializer(order)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = OrderSerializer(order, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "message": "تم تحديث الطلب بنجاح",
+                "order": serializer.data
+            })
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def admin_clients_list_api(request):
+    """Liste de tous les clients"""
+    clients = CustomUser.objects.filter(is_staff=False)
+    serializer = UserSerializer(clients, many=True)
+    return Response(serializer.data)
