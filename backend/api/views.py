@@ -2,13 +2,15 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
-from rest_framework.authtoken.models import Token as AuthToken  # ← Utilisez un alias
 from django.contrib.auth import authenticate
 from .models import CustomUser, HennaType, Order
 from .serializers import (
     RegisterSerializer, UserSerializer,
     HennaTypeSerializer, OrderSerializer, CreateOrderSerializer
 )
+
+# Import Token avec un nom différent pour éviter les conflits
+from rest_framework.authtoken.models import Token as AuthToken
 
 # ----------------------------
 # Configuration des messages selon la langue
@@ -59,23 +61,43 @@ def hello_api(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_api(request):
+    """API d'inscription"""
+    print("=== REGISTER REQUEST ===")
+    print("Data received:", request.data)
+    
     serializer = RegisterSerializer(data=request.data)
     
     if serializer.is_valid():
-        user = serializer.save()
+        try:
+            user = serializer.save()
+            
+            # Créer le token pour l'utilisateur
+            token = AuthToken.objects.create(user=user)
+            
+            lang = user.language_preference
+            
+            print(f"✅ User created successfully: {user.username}")
+            
+            return Response({
+                "message": get_message(lang, 'register_success'),
+                "token": token.key,
+                "user": UserSerializer(user).data
+            }, status=status.HTTP_201_CREATED)
         
-        # Créer le token pour l'utilisateur
-        token, created = AuthToken.objects.get_or_create(user=user)
-        
-        lang = user.language_preference
-        
-        return Response({
-            "message": get_message(lang, 'register_success'),
-            "token": token.key,
-            "user": UserSerializer(user).data
-        }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            print(f"❌ Error creating user: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response({
+                "error": f"Error creating user: {str(e)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
     
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    print("❌ Validation errors:", serializer.errors)
+    return Response({
+        "error": "Validation failed",
+        "details": serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ----------------------------
@@ -84,22 +106,28 @@ def register_api(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login_api(request):
-    username = request.data.get('username')
+    """API de connexion - accepte username OU phone_number"""
+    identifier = request.data.get('username')  # Peut être username ou phone
     password = request.data.get('password')
     
-    if not username or not password:
+    print("=== LOGIN REQUEST ===")
+    print(f"Identifier: {identifier}")
+    
+    if not identifier or not password:
         return Response(
             {"error": "يرجى إدخال اسم المستخدم وكلمة المرور"},
             status=status.HTTP_400_BAD_REQUEST
         )
     
-    user = authenticate(request, username=username, password=password)
+    # Authentifier avec le backend personnalisé (PhoneBackend)
+    user = authenticate(request, username=identifier, password=password)
     
     if user is not None:
         # Créer ou récupérer le token
         token, created = AuthToken.objects.get_or_create(user=user)
-        
         lang = user.language_preference
+        
+        print(f"✅ Login successful for: {user.username}")
         
         return Response({
             "message": get_message(lang, 'login_success'),
@@ -107,6 +135,7 @@ def login_api(request):
             "user": UserSerializer(user).data
         })
     
+    print("❌ Authentication failed")
     return Response(
         {"error": "اسم المستخدم أو كلمة المرور غير صحيحة"},
         status=status.HTTP_400_BAD_REQUEST
@@ -119,16 +148,15 @@ def login_api(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_api(request):
-    # Supprimer le token de l'utilisateur
+    """Déconnexion - Supprimer le token"""
     try:
-        request.user.auth_token.delete()
-    except:
-        pass
+        # Supprimer le token de l'utilisateur
+        AuthToken.objects.filter(user=request.user).delete()
+    except Exception as e:
+        print(f"Error during logout: {e}")
     
     lang = request.user.language_preference
     return Response({"message": get_message(lang, 'logout_success')})
-
-
 # ----------------------------
 # API Profil utilisateur
 # ----------------------------
