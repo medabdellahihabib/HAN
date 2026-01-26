@@ -11,34 +11,47 @@ from django.core.validators import RegexValidator
 class CustomUserManager(BaseUserManager):
     use_in_migrations = True
 
-    def create_user(self, phone_number, password=None, **extra_fields):
+    def create_user(self, username, password=None, **extra_fields):
         """
-        Crée et sauvegarde un utilisateur avec un numéro de téléphone et mot de passe.
+        Crée et sauvegarde un utilisateur.
         """
+        if not username:
+            raise ValueError("Le nom d'utilisateur doit être renseigné")
+        
+        # S'assurer que phone_number est présent
+        phone_number = extra_fields.get('phone_number')
         if not phone_number:
             raise ValueError("Le numéro de téléphone doit être renseigné")
         
-        phone_number = self.model.normalize_username(phone_number)
-        user = self.model(phone_number=phone_number, **extra_fields)
-        user.set_password(password)  # Hash du mot de passe
+
+        
+        user = self.model(username=username, **extra_fields)
+        user.set_password(password)
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, phone_number, password=None, **extra_fields):
+    def create_superuser(self, username, password=None, **extra_fields):
         """
         Crée et sauvegarde un superutilisateur.
         """
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_active', True)
+        
+        # Valeurs par défaut pour les champs requis
+        extra_fields.setdefault('phone_number', '+22200000000')
+        extra_fields.setdefault('gender', 'M')
+        extra_fields.setdefault('age', 30)
+        extra_fields.setdefault('first_name', 'Admin')
+        extra_fields.setdefault('last_name', 'User')
+
 
         if extra_fields.get('is_staff') is not True:
             raise ValueError('Le superuser doit avoir is_staff=True.')
         if extra_fields.get('is_superuser') is not True:
             raise ValueError('Le superuser doit avoir is_superuser=True.')
 
-        return self.create_user(phone_number, password, **extra_fields)
-
+        return self.create_user(username, password, **extra_fields)
 
 # ----------------------------
 # Modèle CustomUser
@@ -47,7 +60,7 @@ class CustomUser(AbstractUser):
     # ----------------------------
     # Identifiant principal = phone_number
     USERNAME_FIELD = 'phone_number'
-    REQUIRED_FIELDS = ['username', 'email', 'first_name', 'last_name']
+    REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
 
     # ----------------------------
     GENDER_CHOICES = [

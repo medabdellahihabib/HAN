@@ -6,26 +6,21 @@ from .models import CustomUser, HennaType, Order
 # ----------------------------
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6)
-    password_confirm = serializers.CharField(write_only=True, min_length=6)
     
     class Meta:
         model = CustomUser
         fields = [
-            'username', 'password', 'password_confirm',
-            'first_name', 'last_name', 'phone_number',
-            'gender', 'age', 'language_preference'
+            'username', 'password', 'first_name', 'last_name',
+            'phone_number', 'gender', 'age', 'language_preference'
         ]
     
-    def validate(self, data):
-        if data['password'] != data['password_confirm']:
-            raise serializers.ValidationError({
-                "password": "كلمات المرور غير متطابقة"
-            })
-        return data
-    
     def create(self, validated_data):
-        validated_data.pop('password_confirm')
-        user = CustomUser.objects.create_user(**validated_data)
+        # Utiliser create_user du manager personnalisé
+        password = validated_data.pop('password')
+        user = CustomUser.objects.create_user(
+            password=password,
+            **validated_data
+        )
         return user
 
 
@@ -37,7 +32,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'id', 'username', 'first_name', 'last_name',
-            'phone_number', 'gender', 'age',
+          'phone_number', 'gender', 'age',
             'language_preference', 'created_at'
         ]
         read_only_fields = ['id', 'username', 'created_at']
@@ -113,7 +108,7 @@ class OrderSerializer(serializers.ModelSerializer):
 class CreateOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
-        fields = ['henna_type', 'notes', 'address']
+        fields = ['henna_type', 'notes', 'address', 'appointment_date']
     
     def create(self, validated_data):
         validated_data['client'] = self.context['request'].user
