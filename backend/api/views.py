@@ -158,7 +158,7 @@ def logout_api(request):
     lang = request.user.language_preference
     return Response({"message": get_message(lang, 'logout_success')})
 # ----------------------------
-# API Profil utilisateur
+# API Profil utilisateur jdj
 # ----------------------------
 @api_view(['GET', 'PUT'])
 @permission_classes([IsAuthenticated])
